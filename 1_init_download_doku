@@ -1,9 +1,14 @@
-# Installiere rvest Paket, falls noch nicht vorhanden
+# Installiere notwendige Pakete, falls noch nicht vorhanden
 if (!requireNamespace("rvest", quietly = TRUE)) {
   install.packages("rvest")
 }
 
+if (!requireNamespace("htmlTable", quietly = TRUE)) {
+  install.packages("htmlTable")
+}
+
 library(rvest)
+library(htmlTable)
 
 # Verzeichnisse für den Download der Pakete setzen
 base_dir <- "C:/rpaketierung/rpackages/20240801"
@@ -27,18 +32,11 @@ error_log <- file.path(logs_dir, "error.log")
 stat_log <- file.path(logs_dir, "stat.log")
 
 # Initialisieren der Protokolldateien
-init_success_df <- data.frame(Name = character(), Version = character(), Summary = character(), Requires = character(), `Home-page` = character(), Author = character(), `Author-email` = character(), License = character(), Pfad = character(), Published = character(), stringsAsFactors = FALSE)
-requires_success_df <- data.frame(Name = character(), Version = character(), Summary = character(), Requires = character(), `Home-page` = character(), Author = character(), `Author-email` = character(), License = character(), Pfad = character(), Published = character(), stringsAsFactors = FALSE)
+init_success_df <- data.frame(Name = character(), Version = character(), Summary = character(), Requires = character(), `Home-page` = character(), Author = character(), `Author-email` = character(), License = character(), `Reference-manual` = character(), Dateiname = character(), Published = character(), stringsAsFactors = FALSE)
+requires_success_df <- data.frame(Name = character(), Version = character(), Summary = character(), Requires = character(), `Home-page` = character(), Author = character(), `Author-email` = character(), License = character(), `Reference-manual` = character(), Dateiname = character(), Published = character(), stringsAsFactors = FALSE)
 
 writeLines("Fehlermeldungen:\n", error_log)
 writeLines("Statistiken:\n", stat_log)
-
-# Installiere htmlTable Paket, falls noch nicht vorhanden
-if (!requireNamespace("htmlTable", quietly = TRUE)) {
-  install.packages("htmlTable")
-}
-
-library(htmlTable)
 
 # Funktion zum Herunterladen von Paketinformationen von der CRAN-Website
 get_cran_package_info <- function(package) {
@@ -53,16 +51,18 @@ get_cran_package_info <- function(package) {
   maintainer <- webpage %>% html_nodes(xpath = '//td[contains(., "Maintainer:")]/following-sibling::td') %>% html_text(trim = TRUE)
   license <- webpage %>% html_nodes(xpath = '//td[contains(., "License:")]/following-sibling::td') %>% html_text(trim = TRUE)
   url <- webpage %>% html_nodes(xpath = '//td[contains(., "URL:")]/following-sibling::td') %>% html_text(trim = TRUE)
+  ref_manual <- webpage %>% html_nodes(xpath = '//a[contains(text(), "Reference manual")]') %>% html_attr('href')
   list(
-    version = version,
-    depends = depends,
-    imports = imports,
-    suggests = suggests,
-    published = published,
-    author = author,
-    maintainer = maintainer,
-    license = license,
-    url = url
+    version = ifelse(length(version) > 0, version, NA),
+    depends = ifelse(length(depends) > 0, depends, NA),
+    imports = ifelse(length(imports) > 0, imports, NA),
+    suggests = ifelse(length(suggests) > 0, suggests, NA),
+    published = ifelse(length(published) > 0, published, NA),
+    author = ifelse(length(author) > 0, author, NA),
+    maintainer = ifelse(length(maintainer) > 0, maintainer, NA),
+    license = ifelse(length(license) > 0, license, NA),
+    url = ifelse(length(url) > 0, url, NA),
+    ref_manual = ifelse(length(ref_manual) > 0, ref_manual, NA)
   )
 }
 
@@ -93,7 +93,8 @@ download_package <- function(package, dest_dir, success_df, error_log) {
       Author = cran_info$author,
       `Author-email` = cran_info$maintainer,
       License = cran_info$license,
-      Pfad = downloaded[,2],
+      `Reference-manual` = cran_info$ref_manual,
+      Dateiname = basename(downloaded[,2]),
       Published = cran_info$published,
       stringsAsFactors = FALSE
     )
@@ -142,8 +143,8 @@ stat_message <- sprintf("Gesamtzahl der Pakete: %d\nErfolgreiche Initialisierung
 writeLines(stat_message, stat_log, sep = "\n", useBytes = TRUE)
 
 # HTML-Tabellen generieren und speichern
-write(htmlTable(init_success_df), init_success_html)
-write(htmlTable(requires_success_df), requires_success_html)
+write(htmlTable(init_success_df), file = init_success_html)
+write(htmlTable(requires_success_df), file = requires_success_html)
 
 # Hinweis:
 # Um die Pakete auf einem anderen Rechner zu installieren, können Sie das gesamte Verzeichnis kopieren und die folgenden Befehle ausführen:
@@ -161,4 +162,3 @@ write(htmlTable(requires_success_df), requires_success_html)
 
 # Installieren Sie die Fachbereichspakete aus den heruntergeladenen Dateien
 # pkg_files <- list.files(pattern = "\\.tar\\.gz$", full.names = TRUE)
-# install.packages(pkg_files, repos = NULL, type = "source")
