@@ -1,36 +1,164 @@
-# Setzen Sie das Arbeitsverzeichnis auf das Zielverzeichnis
-setwd("C:/rpaketierung/rpackages")
-
-# Installieren von renv, falls noch nicht vorhanden
-if (!requireNamespace("renv", quietly = TRUE)) {
-  install.packages("renv")
+# Installiere rvest Paket, falls noch nicht vorhanden
+if (!requireNamespace("rvest", quietly = TRUE)) {
+  install.packages("rvest")
 }
 
-library(renv)
+library(rvest)
 
-# Initialisieren eines neuen renv-Projekts im angegebenen Verzeichnis
-if (!dir.exists("renv")) {
-  renv::init()
-} else {
-  renv::load()
+# Verzeichnisse für den Download der Pakete setzen
+base_dir <- "C:/rpaketierung/rpackages/20240801"
+init_dir <- file.path(base_dir, "initpackages")
+requires_dir <- file.path(base_dir, "requirespackages")
+logs_dir <- file.path(base_dir, "logs")
+dir.create(init_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(requires_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(logs_dir, recursive = TRUE, showWarnings = FALSE)
+
+# Liste der Pakete für die Initialisierung (z.B. Protokollierung)
+init_packages <- c("remotes")
+
+# Liste der zu installierenden Fachbereichs-Pakete
+requires_packages <- c("odbc", "hana.ml.r", "arsenal", "renv")
+
+# Protokolldateien
+init_success_html <- file.path(logs_dir, "init_success.html")
+requires_success_html <- file.path(logs_dir, "requires_success.html")
+error_log <- file.path(logs_dir, "error.log")
+stat_log <- file.path(logs_dir, "stat.log")
+
+# Initialisieren der Protokolldateien
+init_success_df <- data.frame(Name = character(), Version = character(), Summary = character(), Requires = character(), `Home-page` = character(), Author = character(), `Author-email` = character(), License = character(), Pfad = character(), Published = character(), stringsAsFactors = FALSE)
+requires_success_df <- data.frame(Name = character(), Version = character(), Summary = character(), Requires = character(), `Home-page` = character(), Author = character(), `Author-email` = character(), License = character(), Pfad = character(), Published = character(), stringsAsFactors = FALSE)
+
+writeLines("Fehlermeldungen:\n", error_log)
+writeLines("Statistiken:\n", stat_log)
+
+# Installiere htmlTable Paket, falls noch nicht vorhanden
+if (!requireNamespace("htmlTable", quietly = TRUE)) {
+  install.packages("htmlTable")
 }
 
-# Beispiel für das manuelle Hinzufügen eines Pakets, falls erforderlich
-# In diesem Fall nur das renv-Paket und seine Abhängigkeiten
-required_packages <- c("renv") # Fügen Sie hier die tatsächlichen Abhängigkeiten hinzu
+library(htmlTable)
 
-for (pkg in required_packages) {
-  renv::install(pkg)
+# Funktion zum Herunterladen von Paketinformationen von der CRAN-Website
+get_cran_package_info <- function(package) {
+  url <- paste0("https://cran.r-project.org/package=", package)
+  webpage <- read_html(url)
+  version <- webpage %>% html_nodes(xpath = '//td[contains(., "Version:")]/following-sibling::td') %>% html_text(trim = TRUE)
+  depends <- webpage %>% html_nodes(xpath = '//td[contains(., "Depends:")]/following-sibling::td') %>% html_text(trim = TRUE)
+  imports <- webpage %>% html_nodes(xpath = '//td[contains(., "Imports:")]/following-sibling::td') %>% html_text(trim = TRUE)
+  suggests <- webpage %>% html_nodes(xpath = '//td[contains(., "Suggests:")]/following-sibling::td') %>% html_text(trim = TRUE)
+  published <- webpage %>% html_nodes(xpath = '//td[contains(., "Published:")]/following-sibling::td') %>% html_text(trim = TRUE)
+  author <- webpage %>% html_nodes(xpath = '//td[contains(., "Author:")]/following-sibling::td') %>% html_text(trim = TRUE)
+  maintainer <- webpage %>% html_nodes(xpath = '//td[contains(., "Maintainer:")]/following-sibling::td') %>% html_text(trim = TRUE)
+  license <- webpage %>% html_nodes(xpath = '//td[contains(., "License:")]/following-sibling::td') %>% html_text(trim = TRUE)
+  url <- webpage %>% html_nodes(xpath = '//td[contains(., "URL:")]/following-sibling::td') %>% html_text(trim = TRUE)
+  list(
+    version = version,
+    depends = depends,
+    imports = imports,
+    suggests = suggests,
+    published = published,
+    author = author,
+    maintainer = maintainer,
+    license = license,
+    url = url
+  )
 }
 
-# Erstellen einer renv.lock-Datei, die alle Abhängigkeiten auflistet
-renv::snapshot()
+# Funktion zum Herunterladen von Paketen und deren Abhängigkeiten
+download_package <- function(package, dest_dir, success_df, error_log) {
+  tryCatch({
+    # Informationen zum Paket abrufen
+    pkg_info <- available.packages()[package, ]
+    
+    # Paketinformationen von der CRAN-Website abrufen
+    cran_info <- get_cran_package_info(package)
+    
+    # Paket und Abhängigkeiten herunterladen
+    downloaded <- download.packages(pkgs = package, destdir = dest_dir, type = "source")
+    dependencies <- tools::package_dependencies(package, db = available.packages(), which = "all")
+    dependencies_list <- paste(unlist(dependencies[[package]]), collapse = ", ")
+    for (dep in dependencies[[package]]) {
+      download.packages(pkgs = dep, destdir = dest_dir, type = "source")
+    }
+    
+    # Erfolg melden
+    success_entry <- data.frame(
+      Name = pkg_info["Package"],
+      Version = cran_info$version,
+      Summary = pkg_info["Title"],
+      Requires = dependencies_list,
+      `Home-page` = cran_info$url,
+      Author = cran_info$author,
+      `Author-email` = cran_info$maintainer,
+      License = cran_info$license,
+      Pfad = downloaded[,2],
+      Published = cran_info$published,
+      stringsAsFactors = FALSE
+    )
+    return(success_entry)
+  }, error = function(e) {
+    # Fehler melden
+    error_message <- sprintf("Fehler beim Herunterladen von Paket: %s\nFehlermeldung: %s\n\n", package, e$message)
+    writeLines(error_message, error_log, sep = "\n", useBytes = TRUE)
+    return(NULL)
+  })
+}
+
+# Zähler für die Statistiken
+total_packages <- 0
+successful_init_downloads <- 0
+successful_requires_downloads <- 0
+failed_downloads <- 0
+
+# Herunterladen der Initialisierungspakete
+for (pkg in init_packages) {
+  total_packages <- total_packages + 1
+  success_entry <- download_package(pkg, init_dir, init_success_df, error_log)
+  if (!is.null(success_entry)) {
+    init_success_df <- rbind(init_success_df, success_entry)
+    successful_init_downloads <- successful_init_downloads + 1
+  } else {
+    failed_downloads <- failed_downloads + 1
+  }
+}
+
+# Herunterladen der Fachbereichs-Pakete und deren Abhängigkeiten
+for (pkg in requires_packages) {
+  total_packages <- total_packages + 1
+  success_entry <- download_package(pkg, requires_dir, requires_success_df, error_log)
+  if (!is.null(success_entry)) {
+    requires_success_df <- rbind(requires_success_df, success_entry)
+    successful_requires_downloads <- successful_requires_downloads + 1
+  } else {
+    failed_downloads <- failed_downloads + 1
+  }
+}
+
+# Statistiken schreiben
+stat_message <- sprintf("Gesamtzahl der Pakete: %d\nErfolgreiche Initialisierungs-Downloads: %d\nErfolgreiche Fachbereichs-Downloads: %d\nFehlgeschlagene Downloads: %d\n", 
+                        total_packages, successful_init_downloads, successful_requires_downloads, failed_downloads)
+writeLines(stat_message, stat_log, sep = "\n", useBytes = TRUE)
+
+# HTML-Tabellen generieren und speichern
+write(htmlTable(init_success_df), init_success_html)
+write(htmlTable(requires_success_df), requires_success_html)
 
 # Hinweis:
-# Die renv.lock-Datei kann nun verwendet werden, um die Umgebung auf einem anderen Rechner wiederherzustellen.
-# Kopieren Sie das gesamte Verzeichnis C:/rpaketierung/rpackages auf den anderen Rechner
-# Setzen Sie das Arbeitsverzeichnis auf den neuen Pfad und führen Sie renv::restore() aus
+# Um die Pakete auf einem anderen Rechner zu installieren, können Sie das gesamte Verzeichnis kopieren und die folgenden Befehle ausführen:
 
 # Beispiel:
-# setwd("C:/neuer_pfad/rpackages")
-# renv::restore()
+# Setzen Sie das Arbeitsverzeichnis auf den neuen Pfad für Initialisierungspakete
+# setwd("C:/neuer_pfad/rpackages/20240801/initpackages")
+
+# Installieren Sie die Initialisierungspakete aus den heruntergeladenen Dateien
+# pkg_files <- list.files(pattern = "\\.tar\\.gz$", full.names = TRUE)
+# install.packages(pkg_files, repos = NULL, type = "source")
+
+# Setzen Sie das Arbeitsverzeichnis auf den neuen Pfad für Fachbereichspakete
+# setwd("C:/neuer_pfad/rpackages/20240801/requirespackages")
+
+# Installieren Sie die Fachbereichspakete aus den heruntergeladenen Dateien
+# pkg_files <- list.files(pattern = "\\.tar\\.gz$", full.names = TRUE)
+# install.packages(pkg_files, repos = NULL, type = "source")
