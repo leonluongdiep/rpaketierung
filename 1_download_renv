@@ -1,0 +1,36 @@
+# Setzen Sie das Arbeitsverzeichnis auf das Zielverzeichnis
+setwd("C:/rpaketierung/rpackages")
+
+# Installieren von renv, falls noch nicht vorhanden
+if (!requireNamespace("renv", quietly = TRUE)) {
+  install.packages("renv")
+}
+
+library(renv)
+
+# Initialisieren eines neuen renv-Projekts im angegebenen Verzeichnis
+if (!dir.exists("renv")) {
+  renv::init()
+} else {
+  renv::load()
+}
+
+# Beispiel für das manuelle Hinzufügen eines Pakets, falls erforderlich
+# In diesem Fall nur das renv-Paket und seine Abhängigkeiten
+required_packages <- c("renv") # Fügen Sie hier die tatsächlichen Abhängigkeiten hinzu
+
+for (pkg in required_packages) {
+  renv::install(pkg)
+}
+
+# Erstellen einer renv.lock-Datei, die alle Abhängigkeiten auflistet
+renv::snapshot()
+
+# Hinweis:
+# Die renv.lock-Datei kann nun verwendet werden, um die Umgebung auf einem anderen Rechner wiederherzustellen.
+# Kopieren Sie das gesamte Verzeichnis C:/rpaketierung/rpackages auf den anderen Rechner
+# Setzen Sie das Arbeitsverzeichnis auf den neuen Pfad und führen Sie renv::restore() aus
+
+# Beispiel:
+# setwd("C:/neuer_pfad/rpackages")
+# renv::restore()
