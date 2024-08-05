@@ -20,7 +20,7 @@ dir.create(requires_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(logs_dir, recursive = TRUE, showWarnings = FALSE)
 
 # Liste der Pakete für die Initialisierung (z.B. Protokollierung)
-init_packages <- c("remotes")
+init_packages <- c("remotes", "rvest", "htmlTable")
 
 # Liste der zu installierenden Fachbereichs-Pakete
 requires_packages <- c("odbc", "hana.ml.r", "arsenal", "renv")
@@ -32,8 +32,8 @@ error_log <- file.path(logs_dir, "error.log")
 stat_log <- file.path(logs_dir, "stat.log")
 
 # Initialisieren der Protokolldateien
-init_success_df <- data.frame(Name = character(), Version = character(), Summary = character(), Requires = character(), `Home-page` = character(), Author = character(), `Author-email` = character(), License = character(), `Reference-manual` = character(), Dateiname = character(), Published = character(), stringsAsFactors = FALSE)
-requires_success_df <- data.frame(Name = character(), Version = character(), Summary = character(), Requires = character(), `Home-page` = character(), Author = character(), `Author-email` = character(), License = character(), `Reference-manual` = character(), Dateiname = character(), Published = character(), stringsAsFactors = FALSE)
+init_success_df <- data.frame(Name = character(), Version = character(), Summary = character(), Requires = character(), `Home-page` = character(), Author = character(), License = character(), Dateiname = character(), Published = character(), stringsAsFactors = FALSE)
+requires_success_df <- data.frame(Name = character(), Version = character(), Summary = character(), Requires = character(), `Home-page` = character(), Author = character(), License = character(), Dateiname = character(), Published = character(), stringsAsFactors = FALSE)
 
 writeLines("Fehlermeldungen:\n", error_log)
 writeLines("Statistiken:\n", stat_log)
@@ -48,10 +48,8 @@ get_cran_package_info <- function(package) {
   suggests <- webpage %>% html_nodes(xpath = '//td[contains(., "Suggests:")]/following-sibling::td') %>% html_text(trim = TRUE)
   published <- webpage %>% html_nodes(xpath = '//td[contains(., "Published:")]/following-sibling::td') %>% html_text(trim = TRUE)
   author <- webpage %>% html_nodes(xpath = '//td[contains(., "Author:")]/following-sibling::td') %>% html_text(trim = TRUE)
-  maintainer <- webpage %>% html_nodes(xpath = '//td[contains(., "Maintainer:")]/following-sibling::td') %>% html_text(trim = TRUE)
   license <- webpage %>% html_nodes(xpath = '//td[contains(., "License:")]/following-sibling::td') %>% html_text(trim = TRUE)
   url <- webpage %>% html_nodes(xpath = '//td[contains(., "URL:")]/following-sibling::td') %>% html_text(trim = TRUE)
-  ref_manual <- webpage %>% html_nodes(xpath = '//a[contains(text(), "Reference manual")]') %>% html_attr('href')
   list(
     version = ifelse(length(version) > 0, version, NA),
     depends = ifelse(length(depends) > 0, depends, NA),
@@ -59,10 +57,8 @@ get_cran_package_info <- function(package) {
     suggests = ifelse(length(suggests) > 0, suggests, NA),
     published = ifelse(length(published) > 0, published, NA),
     author = ifelse(length(author) > 0, author, NA),
-    maintainer = ifelse(length(maintainer) > 0, maintainer, NA),
     license = ifelse(length(license) > 0, license, NA),
-    url = ifelse(length(url) > 0, url, NA),
-    ref_manual = ifelse(length(ref_manual) > 0, ref_manual, NA)
+    url = ifelse(length(url) > 0, url, NA)
   )
 }
 
@@ -91,9 +87,7 @@ download_package <- function(package, dest_dir, success_df, error_log) {
       Requires = dependencies_list,
       `Home-page` = cran_info$url,
       Author = cran_info$author,
-      `Author-email` = cran_info$maintainer,
       License = cran_info$license,
-      `Reference-manual` = cran_info$ref_manual,
       Dateiname = basename(downloaded[,2]),
       Published = cran_info$published,
       stringsAsFactors = FALSE
@@ -137,14 +131,20 @@ for (pkg in requires_packages) {
   }
 }
 
+# Anzahl der Dateien in den Verzeichnissen zählen
+init_files_count <- length(list.files(init_dir, pattern = "\\.tar\\.gz$"))
+requires_files_count <- length(list.files(requires_dir, pattern = "\\.tar\\.gz$"))
+
 # Statistiken schreiben
-stat_message <- sprintf("Gesamtzahl der Pakete: %d\nErfolgreiche Initialisierungs-Downloads: %d\nErfolgreiche Fachbereichs-Downloads: %d\nFehlgeschlagene Downloads: %d\n", 
-                        total_packages, successful_init_downloads, successful_requires_downloads, failed_downloads)
+stat_message <- sprintf("Gesamtzahl der Pakete: %d\nErfolgreiche Initialisierungs-Downloads: %d\nErfolgreiche Fachbereichs-Downloads: %d\nFehlgeschlagene Downloads: %d\nAnzahl der Dateien in initpackages: %d\nAnzahl der Dateien in requirespackages: %d\n", 
+                        total_packages, successful_init_downloads, successful_requires_downloads, failed_downloads, init_files_count, requires_files_count)
 writeLines(stat_message, stat_log, sep = "\n", useBytes = TRUE)
 
 # HTML-Tabellen generieren und speichern
-write(htmlTable(init_success_df), file = init_success_html)
-write(htmlTable(requires_success_df), file = requires_success_html)
+html_init_success <- htmlTable(init_success_df, css.cell = "padding: 5px;")
+html_requires_success <- htmlTable(requires_success_df, css.cell = "padding: 5px;")
+write(html_init_success, file = init_success_html)
+write(html_requires_success, file = requires_success_html)
 
 # Hinweis:
 # Um die Pakete auf einem anderen Rechner zu installieren, können Sie das gesamte Verzeichnis kopieren und die folgenden Befehle ausführen:
@@ -162,3 +162,20 @@ write(htmlTable(requires_success_df), file = requires_success_html)
 
 # Installieren Sie die Fachbereichspakete aus den heruntergeladenen Dateien
 # pkg_files <- list.files(pattern = "\\.tar\\.gz$", full.names = TRUE)
+# install.packages(pkg_files, repos = NULL, type = "source")
+
+
+# 
+# 
+# Erklärung der Änderungen:
+#   
+#   Anzahl der Dateien in den Verzeichnissen zählen: Die Anzahl der .tar.gz-Dateien in den Verzeichnissen initpackages und requirespackages wird gezählt und in die Statistik aufgenommen.
+# Statistiken schreiben: Die Statistikdatei stat.log wird um die Anzahl der Dateien in den Verzeichnissen initpackages und requirespackages ergänzt.
+# 
+# Ergebnis:
+#   
+#   init_success.html: Enthält vollständige Informationen über erfolgreich heruntergeladene Initialisierungspakete im HTML-Format.
+# requires_success.html: Enthält vollständige Informationen über erfolgreich heruntergeladene Fachbereichspakete im HTML-Format.
+# error.log: Enthält Informationen über Fehler, die beim Herunterladen von Paketen aufgetreten sind.
+# stat.log: Enthält Statistiken über die Gesamtzahl der Pakete, die Anzahl der erfolgreichen Initialisierungs-Downloads, die Anzahl der erfolgreichen Fachbereichs-Downloads, die Anzahl der fehlgeschlagenen Downloads und die Anzahl der Dateien in den Verzeichnissen initpackages und requirespackages.
+# 
