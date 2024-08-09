@@ -12,9 +12,9 @@ library(htmlTable)
 
 # Verzeichnisse für den Download der Pakete setzen
 base_dir <- "C:/rpaketierung/20240801"
-init_dir <- file.path(base_dir, "initpackages")
-requires_dir <- file.path(base_dir, "requirespackages")
-logs_dir <- file.path(base_dir, "logs")
+init_dir <- file.path(base_dir, "downloaded_initpackages")
+requires_dir <- file.path(base_dir, "downloaded_requirespackages")
+logs_dir <- file.path(base_dir, "download_logs")
 dir.create(init_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(requires_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(logs_dir, recursive = TRUE, showWarnings = FALSE)
@@ -22,21 +22,11 @@ dir.create(logs_dir, recursive = TRUE, showWarnings = FALSE)
 # Liste der Pakete für die Initialisierung (z.B. Protokollierung)
 init_packages <- c("remotes", "rvest", "htmlTable")
 
-# Liste der zu installierenden Fachbereichs-Pakete
-requires_packages <- c("odbc", "hana.ml.r")
+# Pfad zur CSV-Datei mit der Paketliste
+paketliste_file <- "C:/rpaketierung/20240801/rpaketliste.csv"
 
-# Protokolldateien
-init_success_html <- file.path(logs_dir, "init_success.html")
-requires_success_html <- file.path(logs_dir, "requires_success.html")
-error_log <- file.path(logs_dir, "error.log")
-stat_log <- file.path(logs_dir, "stat.log")
-
-# Initialisieren der Protokolldateien
-init_success_df <- data.frame(Name = character(), Version = character(), Summary = character(), Requires = character(), `Home-page` = character(), Author = character(), License = character(), Dateiname = character(), Published = character(), stringsAsFactors = FALSE)
-requires_success_df <- data.frame(Name = character(), Version = character(), Summary = character(), Requires = character(), `Home-page` = character(), Author = character(), License = character(), Dateiname = character(), Published = character(), stringsAsFactors = FALSE)
-
-writeLines("Fehlermeldungen:\n", error_log)
-writeLines("Statistiken:\n", stat_log)
+# Lade die Paketliste aus der CSV-Datei
+pakete <- read.csv(paketliste_file, stringsAsFactors = FALSE)$Paketname
 
 # Funktion zum Herunterladen von Paketinformationen von der CRAN-Website
 get_cran_package_info <- function(package) {
@@ -72,7 +62,11 @@ download_package <- function(package, dest_dir, success_df, error_log) {
     cran_info <- get_cran_package_info(package)
     
     # Paket und Abhängigkeiten herunterladen
+    start_time <- Sys.time()
     downloaded <- download.packages(pkgs = package, destdir = dest_dir, type = "source")
+    end_time <- Sys.time()
+    duration <- difftime(end_time, start_time, units = "secs")
+    
     dependencies <- tools::package_dependencies(package, db = available.packages(), which = "all")
     dependencies_list <- paste(unlist(dependencies[[package]]), collapse = ", ")
     for (dep in dependencies[[package]]) {
@@ -92,7 +86,7 @@ download_package <- function(package, dest_dir, success_df, error_log) {
       Published = cran_info$published,
       stringsAsFactors = FALSE
     )
-    return(success_entry)
+    return(list(entry = success_entry, duration = duration))
   }, error = function(e) {
     # Fehler melden
     error_message <- sprintf("Fehler beim Herunterladen von Paket: %s\nFehlermeldung: %s\n\n", package, e$message)
@@ -107,25 +101,40 @@ successful_init_downloads <- 0
 successful_requires_downloads <- 0
 failed_downloads <- 0
 
+# Initialisieren der Protokolldateien
+init_success_df <- data.frame(Name = character(), Version = character(), Summary = character(), Requires = character(), `Home-page` = character(), Author = character(), License = character(), Dateiname = character(), Published = character(), stringsAsFactors = FALSE)
+requires_success_df <- data.frame(Name = character(), Version = character(), Summary = character(), Requires = character(), `Home-page` = character(), Author = character(), License = character(), Dateiname = character(), Published = character(), stringsAsFactors = FALSE)
+
+error_log <- file.path(logs_dir, "download_error.log")
+writeLines("Fehlermeldungen:\n", error_log)
+
+# Variablen für Zeitmessung
+total_init_time <- 0
+total_requires_time <- 0
+
 # Herunterladen der Initialisierungspakete
 for (pkg in init_packages) {
   total_packages <- total_packages + 1
-  success_entry <- download_package(pkg, init_dir, init_success_df, error_log)
-  if (!is.null(success_entry)) {
-    init_success_df <- rbind(init_success_df, success_entry)
+  cat(sprintf("Herunterladen des Pakets: %s\n", pkg))
+  result <- download_package(pkg, init_dir, init_success_df, error_log)
+  if (!is.null(result)) {
+    init_success_df <- rbind(init_success_df, result$entry)
     successful_init_downloads <- successful_init_downloads + 1
+    total_init_time <- total_init_time + result$duration
   } else {
     failed_downloads <- failed_downloads + 1
   }
 }
 
-# Herunterladen der Fachbereichs-Pakete und deren Abhängigkeiten
-for (pkg in requires_packages) {
+# Herunterladen der Pakete aus der CSV-Liste
+for (pkg in pakete) {
   total_packages <- total_packages + 1
-  success_entry <- download_package(pkg, requires_dir, requires_success_df, error_log)
-  if (!is.null(success_entry)) {
-    requires_success_df <- rbind(requires_success_df, success_entry)
+  cat(sprintf("Herunterladen des Pakets: %s\n", pkg))
+  result <- download_package(pkg, requires_dir, requires_success_df, error_log)
+  if (!is.null(result)) {
+    requires_success_df <- rbind(requires_success_df, result$entry)
     successful_requires_downloads <- successful_requires_downloads + 1
+    total_requires_time <- total_requires_time + result$duration
   } else {
     failed_downloads <- failed_downloads + 1
   }
@@ -136,46 +145,19 @@ init_files_count <- length(list.files(init_dir, pattern = "\\.tar\\.gz$"))
 requires_files_count <- length(list.files(requires_dir, pattern = "\\.tar\\.gz$"))
 
 # Statistiken schreiben
-stat_message <- sprintf("Gesamtzahl der Pakete: %d\nErfolgreiche Initialisierungs-Downloads: %d\nErfolgreiche Fachbereichs-Downloads: %d\nFehlgeschlagene Downloads: %d\nAnzahl der Dateien in initpackages: %d\nAnzahl der Dateien in requirespackages: %d\n", 
-                        total_packages, successful_init_downloads, successful_requires_downloads, failed_downloads, init_files_count, requires_files_count)
+stat_log <- file.path(logs_dir, "download_stat.log")
+stat_message <- sprintf(
+  "Gesamtzahl der Pakete: %d\nErfolgreiche Init-Downloads: %d\nErfolgreiche Requires-Downloads: %d\nFehlgeschlagene Downloads: %d\nAnzahl der Dateien in downloaded_initpackages: %d\nAnzahl der Dateien in downloaded_requirespackages: %d\nGesamtzeit für Init-Downloads: %.2f Sekunden\nGesamtzeit für Requires-Downloads: %.2f Sekunden\n", 
+  total_packages, successful_init_downloads, successful_requires_downloads, failed_downloads, init_files_count, requires_files_count, total_init_time, total_requires_time
+)
 writeLines(stat_message, stat_log, sep = "\n", useBytes = TRUE)
 
 # HTML-Tabellen generieren und speichern
+init_success_html <- file.path(logs_dir, "download_init_success.html")
+requires_success_html <- file.path(logs_dir, "download_requires_success.html")
+
 html_init_success <- htmlTable(init_success_df, css.cell = "padding: 5px;")
-html_requires_success <- htmlTable(requires_success_df, css.cell = "padding: 5px;")
 write(html_init_success, file = init_success_html)
+
+html_requires_success <- htmlTable(requires_success_df, css.cell = "padding: 5px;")
 write(html_requires_success, file = requires_success_html)
-
-# Hinweis:
-# Um die Pakete auf einem anderen Rechner zu installieren, können Sie das gesamte Verzeichnis kopieren und die folgenden Befehle ausführen:
-
-# Beispiel:
-# Setzen Sie das Arbeitsverzeichnis auf den neuen Pfad für Initialisierungspakete
-# setwd("C:/neuer_pfad/rpackages/20240801/initpackages")
-
-# Installieren Sie die Initialisierungspakete aus den heruntergeladenen Dateien
-# pkg_files <- list.files(pattern = "\\.tar\\.gz$", full.names = TRUE)
-# install.packages(pkg_files, repos = NULL, type = "source")
-
-# Setzen Sie das Arbeitsverzeichnis auf den neuen Pfad für Fachbereichspakete
-# setwd("C:/neuer_pfad/rpackages/20240801/requirespackages")
-
-# Installieren Sie die Fachbereichspakete aus den heruntergeladenen Dateien
-# pkg_files <- list.files(pattern = "\\.tar\\.gz$", full.names = TRUE)
-# install.packages(pkg_files, repos = NULL, type = "source")
-
-
-# 
-# 
-# Erklärung der Änderungen:
-#   
-#   Anzahl der Dateien in den Verzeichnissen zählen: Die Anzahl der .tar.gz-Dateien in den Verzeichnissen initpackages und requirespackages wird gezählt und in die Statistik aufgenommen.
-# Statistiken schreiben: Die Statistikdatei stat.log wird um die Anzahl der Dateien in den Verzeichnissen initpackages und requirespackages ergänzt.
-# 
-# Ergebnis:
-#   
-#   init_success.html: Enthält vollständige Informationen über erfolgreich heruntergeladene Initialisierungspakete im HTML-Format.
-# requires_success.html: Enthält vollständige Informationen über erfolgreich heruntergeladene Fachbereichspakete im HTML-Format.
-# error.log: Enthält Informationen über Fehler, die beim Herunterladen von Paketen aufgetreten sind.
-# stat.log: Enthält Statistiken über die Gesamtzahl der Pakete, die Anzahl der erfolgreichen Initialisierungs-Downloads, die Anzahl der erfolgreichen Fachbereichs-Downloads, die Anzahl der fehlgeschlagenen Downloads und die Anzahl der Dateien in den Verzeichnissen initpackages und requirespackages.
-# 
