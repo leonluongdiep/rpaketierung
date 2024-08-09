@@ -1,0 +1,32 @@
+install_packages <- function(pkg_files, log_file) {
+  start_time <- Sys.time()
+  installed_count <- 0
+  already_installed_count <- 0
+  failed_count <- 0
+  
+  for (pkg in pkg_files) {
+    pkg_name <- sub("_.*", "", basename(pkg))
+    if (!requireNamespace(pkg_name, quietly = TRUE)) {
+      tryCatch({
+        install.packages(pkg, repos = NULL, type = "source")
+        installed_count <- installed_count + 1
+      }, error = function(e) {
+        cat(sprintf("Failed to install %s: %s\n", pkg, e$message), file = log_file, append = TRUE)
+        failed_count <- failed_count + 1
+      })
+    } else {
+      already_installed_count <- already_installed_count + 1
+    }
+  }
+  
+  end_time <- Sys.time()
+  duration <- difftime(end_time, start_time, units = "secs")
+  
+  log_message <- sprintf(
+    "Anzahl installierter Pakete: %d\nAnzahl bereits vorhandener Pakete: %d\nAnzahl fehlerhafter Installationen: %d\nStartzeit der Installation: %s\nEndzeit der Installation: %s\nGesamtdauer der Installation: %.2f Sekunden\n",
+    installed_count, already_installed_count, failed_count, start_time, end_time, as.numeric(duration)
+  )
+  
+  cat(log_message, file = log_file, append = TRUE)
+  cat(log_message)
+}
