@@ -11,7 +11,7 @@ library(rvest)
 library(htmlTable)
 
 # Verzeichnisse für den Download der Pakete setzen
-base_dir <- "C:/rpaketierung/rpackages/20240801"
+base_dir <- "C:/rpaketierung/20240801"
 init_dir <- file.path(base_dir, "initpackages")
 requires_dir <- file.path(base_dir, "requirespackages")
 logs_dir <- file.path(base_dir, "logs")
@@ -23,7 +23,7 @@ dir.create(logs_dir, recursive = TRUE, showWarnings = FALSE)
 init_packages <- c("remotes", "rvest", "htmlTable")
 
 # Liste der zu installierenden Fachbereichs-Pakete
-requires_packages <- c("odbc", "hana.ml.r", "arsenal", "renv")
+requires_packages <- c("odbc", "hana.ml.r")
 
 # Protokolldateien
 init_success_html <- file.path(logs_dir, "init_success.html")
