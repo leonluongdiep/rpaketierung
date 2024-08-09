@@ -1,1 +1,69 @@
 
+@echo off
+REM Setze den Pfad für das RScript-Programm
+SET R_SCRIPT="C:\Program Files\R\R-4.4.1\bin\Rscript.exe"
+SET LOG_DIR=C:\rpaketierung\20240801\install_logs
+SET PROTOKOLL_FILE=%LOG_DIR%\install_protokoll.txt
+
+REM Erstelle das Protokollverzeichnis, falls es nicht existiert
+IF NOT EXIST %LOG_DIR% (
+    mkdir %LOG_DIR%
+)
+
+REM Startzeit protokollieren
+SET START_TIME=%TIME%
+SET START_DATE=%DATE%
+echo Startzeit der Installation: %START_DATE% %START_TIME% >> %PROTOKOLL_FILE%
+
+REM Debugging-Ausgabe
+echo Debug: Installiere Initialisierungspakete... >> %PROTOKOLL_FILE%
+echo Debug: Installiere Initialisierungspakete...
+
+REM Installiere Initialisierungspakete
+%R_SCRIPT% -e "init_pkg_files <- list.files('C:/rpaketierung/20240801/downloaded_initpackages', pattern = '\\.tar\\.gz$', full.names = TRUE); source('C:/rpaketierung/20240801/install_packages.R'); install_packages(init_pkg_files, 'C:/rpaketierung/20240801/install_logs/init_install_log.txt')" >> %PROTOKOLL_FILE% 2>&1
+
+REM Prüfen, ob der erste R-Befehl erfolgreich war
+IF %ERRORLEVEL% NEQ 0 (
+    echo Fehler beim Installieren der Initialisierungspakete >> %PROTOKOLL_FILE%
+    echo Fehler beim Installieren der Initialisierungspakete
+    PAUSE
+    EXIT /B 1
+)
+
+REM Debugging-Ausgabe
+echo Debug: Installiere Fachbereichspakete... >> %PROTOKOLL_FILE%
+echo Debug: Installiere Fachbereichspakete...
+
+REM Installiere Fachbereichspakete
+%R_SCRIPT% -e "requires_pkg_files <- list.files('C:/rpaketierung/20240801/downloaded_requirespackages', pattern = '\\.tar\\.gz$', full.names = TRUE); source('C:/rpaketierung/20240801/install_packages.R'); install_packages(requires_pkg_files, 'C:/rpaketierung/20240801/install_logs/requires_install_log.txt')" >> %PROTOKOLL_FILE% 2>&1
+
+REM Prüfen, ob der zweite R-Befehl erfolgreich war
+IF %ERRORLEVEL% NEQ 0 (
+    echo Fehler beim Installieren der Fachbereichspakete >> %PROTOKOLL_FILE%
+    echo Fehler beim Installieren der Fachbereichspakete
+    PAUSE
+    EXIT /B 1
+)
+
+REM Endzeit protokollieren
+SET END_TIME=%TIME%
+SET END_DATE=%DATE%
+echo Endzeit der Installation: %END_DATE% %END_TIME% >> %PROTOKOLL_FILE%
+
+REM Berechne Gesamtdauer
+FOR /F "tokens=1-4 delims=:.," %%a IN ("%START_TIME%") DO (
+    SET /A "START_SECONDS=(((%%a*60)+1%%b %% 100)*60+1%%c %% 100)"
+)
+FOR /F "tokens=1-4 delims=:.," %%a IN ("%END_TIME%") DO (
+    SET /A "END_SECONDS=(((%%a*60)+1%%b %% 100)*60+1%%c %% 100)"
+)
+SET /A "DURATION_SECONDS=END_SECONDS-START_SECONDS"
+SET /A "DURATION_MINUTES=DURATION_SECONDS/60"
+SET /A "REMAINDER_SECONDS=DURATION_SECONDS %% 60"
+echo Gesamtdauer der Installation: %DURATION_MINUTES% Minuten und %REMAINDER_SECONDS% Sekunden >> %PROTOKOLL_FILE%
+
+REM Debugging-Ausgabe
+echo Debug: Installation complete. >> %PROTOKOLL_FILE%
+echo Debug: Installation complete.
+ECHO Installation complete. >> %PROTOKOLL_FILE%
+PAUSE
