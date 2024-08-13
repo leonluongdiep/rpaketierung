@@ -19,74 +19,55 @@ dir.create(init_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(requires_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(logs_dir, recursive = TRUE, showWarnings = FALSE)
 
-# Liste der Pakete für die Initialisierung (z.B. Protokollierung)
-init_packages <- c("remotes", "rvest", "htmlTable")
-
-# Pfad zur CSV-Datei mit der Paketliste
-paketliste_file <- "C:/rpaketierung/20240801/rpaketliste.csv"
-
 # Lade die Paketliste aus der CSV-Datei
+paketliste_file <- file.path(base_dir, "rpaketliste.csv")
 pakete <- read.csv(paketliste_file, stringsAsFactors = FALSE)$Paketname
 
-# Funktion zum Herunterladen von Paketinformationen von der CRAN-Website
-get_cran_package_info <- function(package) {
-  url <- paste0("https://cran.r-project.org/package=", package)
+# Funktion zum Extrahieren der Paketinformationen von der CRAN-Seite
+get_cran_package_info <- function(package_name) {
+  url <- paste0("https://cran.r-project.org/package=", package_name)
   webpage <- read_html(url)
+  
+  # Extrahiere die notwendigen Informationen
   version <- webpage %>% html_nodes(xpath = '//td[contains(., "Version:")]/following-sibling::td') %>% html_text(trim = TRUE)
-  depends <- webpage %>% html_nodes(xpath = '//td[contains(., "Depends:")]/following-sibling::td') %>% html_text(trim = TRUE)
-  imports <- webpage %>% html_nodes(xpath = '//td[contains(., "Imports:")]/following-sibling::td') %>% html_text(trim = TRUE)
-  suggests <- webpage %>% html_nodes(xpath = '//td[contains(., "Suggests:")]/following-sibling::td') %>% html_text(trim = TRUE)
-  published <- webpage %>% html_nodes(xpath = '//td[contains(., "Published:")]/following-sibling::td') %>% html_text(trim = TRUE)
   author <- webpage %>% html_nodes(xpath = '//td[contains(., "Author:")]/following-sibling::td') %>% html_text(trim = TRUE)
+  published <- webpage %>% html_nodes(xpath = '//td[contains(., "Published:")]/following-sibling::td') %>% html_text(trim = TRUE)
   license <- webpage %>% html_nodes(xpath = '//td[contains(., "License:")]/following-sibling::td') %>% html_text(trim = TRUE)
-  url <- webpage %>% html_nodes(xpath = '//td[contains(., "URL:")]/following-sibling::td') %>% html_text(trim = TRUE)
+  url <- paste0("https://cran.r-project.org/package=", package_name)  # Direkter Link zur CRAN-Seite
+  
   list(
     version = ifelse(length(version) > 0, version, NA),
-    depends = ifelse(length(depends) > 0, depends, NA),
-    imports = ifelse(length(imports) > 0, imports, NA),
-    suggests = ifelse(length(suggests) > 0, suggests, NA),
-    published = ifelse(length(published) > 0, published, NA),
     author = ifelse(length(author) > 0, author, NA),
+    published = ifelse(length(published) > 0, published, NA),
     license = ifelse(length(license) > 0, license, NA),
-    url = ifelse(length(url) > 0, url, NA)
+    url = url  # Link zur Paketseite als Home-page
   )
 }
 
 # Funktion zum Herunterladen von Paketen und deren Abhängigkeiten
-download_package <- function(package, dest_dir, success_df, error_log) {
+download_package <- function(package, dest_dir, success_df, error_log, package_no) {
   tryCatch({
     # Informationen zum Paket abrufen
-    pkg_info <- available.packages()[package, ]
-    
-    # Paketinformationen von der CRAN-Website abrufen
     cran_info <- get_cran_package_info(package)
     
     # Paket und Abhängigkeiten herunterladen
-    start_time <- Sys.time()
     downloaded <- download.packages(pkgs = package, destdir = dest_dir, type = "source")
-    end_time <- Sys.time()
-    duration <- difftime(end_time, start_time, units = "secs")
-    
     dependencies <- tools::package_dependencies(package, db = available.packages(), which = "all")
     dependencies_list <- paste(unlist(dependencies[[package]]), collapse = ", ")
-    for (dep in dependencies[[package]]) {
-      download.packages(pkgs = dep, destdir = dest_dir, type = "source")
-    }
     
     # Erfolg melden
     success_entry <- data.frame(
-      Name = pkg_info["Package"],
+      Name = package,  # Name des Pakets
       Version = cran_info$version,
-      Summary = pkg_info["Title"],
-      Requires = dependencies_list,
-      `Home-page` = cran_info$url,
+      `Home-page` = paste0('<a href="', cran_info$url, '">', cran_info$url, '</a>'),
       Author = cran_info$author,
       License = cran_info$license,
-      Dateiname = basename(downloaded[,2]),
+      Requires = dependencies_list,
+      Filename = basename(downloaded[,2]),
       Published = cran_info$published,
       stringsAsFactors = FALSE
     )
-    return(list(entry = success_entry, duration = duration))
+    return(success_entry)
   }, error = function(e) {
     # Fehler melden
     error_message <- sprintf("Fehler beim Herunterladen von Paket: %s\nFehlermeldung: %s\n\n", package, e$message)
@@ -97,67 +78,45 @@ download_package <- function(package, dest_dir, success_df, error_log) {
 
 # Zähler für die Statistiken
 total_packages <- 0
-successful_init_downloads <- 0
 successful_requires_downloads <- 0
 failed_downloads <- 0
 
 # Initialisieren der Protokolldateien
-init_success_df <- data.frame(Name = character(), Version = character(), Summary = character(), Requires = character(), `Home-page` = character(), Author = character(), License = character(), Dateiname = character(), Published = character(), stringsAsFactors = FALSE)
-requires_success_df <- data.frame(Name = character(), Version = character(), Summary = character(), Requires = character(), `Home-page` = character(), Author = character(), License = character(), Dateiname = character(), Published = character(), stringsAsFactors = FALSE)
+requires_success_df <- data.frame(Name = character(), Version = character(), `Home-page` = character(), Author = character(), License = character(), Requires = character(), Filename = character(), Published = character(), stringsAsFactors = FALSE)
 
 error_log <- file.path(logs_dir, "download_error.log")
 writeLines("Fehlermeldungen:\n", error_log)
 
-# Variablen für Zeitmessung
-total_init_time <- 0
-total_requires_time <- 0
-
-# Herunterladen der Initialisierungspakete
-for (pkg in init_packages) {
-  total_packages <- total_packages + 1
-  cat(sprintf("Herunterladen des Pakets: %s\n", pkg))
-  result <- download_package(pkg, init_dir, init_success_df, error_log)
-  if (!is.null(result)) {
-    init_success_df <- rbind(init_success_df, result$entry)
-    successful_init_downloads <- successful_init_downloads + 1
-    total_init_time <- total_init_time + result$duration
-  } else {
-    failed_downloads <- failed_downloads + 1
-  }
-}
-
 # Herunterladen der Pakete aus der CSV-Liste
-for (pkg in pakete) {
+for (i in seq_along(pakete)) {
   total_packages <- total_packages + 1
-  cat(sprintf("Herunterladen des Pakets: %s\n", pkg))
-  result <- download_package(pkg, requires_dir, requires_success_df, error_log)
-  if (!is.null(result)) {
-    requires_success_df <- rbind(requires_success_df, result$entry)
+  cat(sprintf("Herunterladen des Pakets: %s\n", pakete[i]))
+  success_entry <- download_package(pakete[i], requires_dir, requires_success_df, error_log, i)
+  if (!is.null(success_entry)) {
+    requires_success_df <- rbind(requires_success_df, success_entry)
     successful_requires_downloads <- successful_requires_downloads + 1
-    total_requires_time <- total_requires_time + result$duration
   } else {
     failed_downloads <- failed_downloads + 1
   }
 }
 
 # Anzahl der Dateien in den Verzeichnissen zählen
-init_files_count <- length(list.files(init_dir, pattern = "\\.tar\\.gz$"))
 requires_files_count <- length(list.files(requires_dir, pattern = "\\.tar\\.gz$"))
 
 # Statistiken schreiben
 stat_log <- file.path(logs_dir, "download_stat.log")
-stat_message <- sprintf(
-  "Gesamtzahl der Pakete: %d\nErfolgreiche Init-Downloads: %d\nErfolgreiche Requires-Downloads: %d\nFehlgeschlagene Downloads: %d\nAnzahl der Dateien in downloaded_initpackages: %d\nAnzahl der Dateien in downloaded_requirespackages: %d\nGesamtzeit für Init-Downloads: %.2f Sekunden\nGesamtzeit für Requires-Downloads: %.2f Sekunden\n", 
-  total_packages, successful_init_downloads, successful_requires_downloads, failed_downloads, init_files_count, requires_files_count, total_init_time, total_requires_time
-)
+stat_message <- sprintf("Gesamtzahl der Pakete: %d\n", total_packages)  # Ausgabe der Gesamtzahl der Pakete
 writeLines(stat_message, stat_log, sep = "\n", useBytes = TRUE)
 
 # HTML-Tabellen generieren und speichern
-init_success_html <- file.path(logs_dir, "download_init_success.html")
 requires_success_html <- file.path(logs_dir, "download_requires_success.html")
 
-html_init_success <- htmlTable(init_success_df, css.cell = "padding: 5px;")
-write(html_init_success, file = init_success_html)
-
-html_requires_success <- htmlTable(requires_success_df, css.cell = "padding: 5px;")
-write(html_requires_success, file = requires_success_html)
+if (nrow(requires_success_df) > 0) {
+  html_requires_success <- htmlTable(requires_success_df,
+                                     css.cell = "padding: 5px;",
+                                     css.rgroup = c("background-color: #f2f2f2;", "background-color: #e6f7ff;"),  # Abwechselnde Hintergrundfarben
+                                     rgroup = rep("", nrow(requires_success_df)),  # Keine doppelte Angabe der Paketnummer
+                                     n.rgroup = rep(1, nrow(requires_success_df)),
+                                     header = names(requires_success_df))  # Titeländerung
+  write(html_requires_success, file = requires_success_html)
+}
