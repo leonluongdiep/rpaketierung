@@ -1,0 +1,32 @@
+
+rm(list = ls())
+
+# Funktion zum Entladen aller Pakete außer den Basis-Paketen
+detach_all_packages <- function() {
+  basic.packages <- c("package:stats", "package:graphics", "package:grDevices", 
+                      "package:utils", "package:datasets", "package:methods", 
+                      "package:base")
+  package.list <- search()[ifelse(unlist(gregexpr("package:", search())) == 1, TRUE, FALSE)]
+  package.list <- setdiff(package.list, basic.packages)
+  if (length(package.list) > 0)  for (package in package.list) detach(package, character.only = TRUE)
+}
+
+# Entladen aller Pakete
+detach_all_packages()
+
+# Löschen aller Objekte aus der globalen Umgebung
+rm(list = ls(envir = .GlobalEnv), envir = .GlobalEnv)
+
+# Zurücksetzen der Optionen auf die Standardwerte
+options(defaultPackages = getOption("defaultPackages"))
+
+# Zurücksetzen des Arbeitsverzeichnisses (optional)
+# Setzen Sie das Arbeitsverzeichnis auf den ursprünglichen Standardwert
+# setwd("~/")
+
+# Neustarten von R (optional, nur in RStudio)
+# Diese Zeile führt einen vollständigen Neustart der R-Sitzung durch
+# .rs.restartR() # Funktioniert nur in RStudio
+
+# Bestätigungsnachricht
+cat("Die globale Umgebung wurde zurückgesetzt.\n")
