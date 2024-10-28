@@ -1,0 +1,28 @@
+# Funktion zum Entfernen aller Pakete aus den Benutzerbibliotheken
+remove_user_lib_packages <- function() {
+  # Pfade zu den Benutzerbibliotheken ermitteln
+  user_lib_paths <- .libPaths()
+  
+  # Sicherstellen, dass die notwendigen Pakete geladen sind
+  if (!requireNamespace("utils", quietly = TRUE)) {
+    stop("Das 'utils'-Paket ist nicht verfügbar.")
+  }
+  
+  # Alle installierten Pakete in den Benutzerbibliotheken ermitteln
+  installed_packages <- utils::installed.packages(lib.loc = user_lib_paths)
+  
+  # Namen der Pakete extrahieren
+  package_names <- rownames(installed_packages)
+  
+  # Pakete entfernen
+  for (pkg in package_names) {
+    cat(sprintf("Removing package: %s\n", pkg))
+    remove.packages(pkg, lib = user_lib_paths)
+  }
+  
+  cat("All user library packages have been removed.\n")
+}
+
+# Ausführen der Funktion
+remove_user_lib_packages()
+
