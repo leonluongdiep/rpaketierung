@@ -1,0 +1,6 @@
+#--------------------------------------
+
+system_lib <- "C:/Program Files/R/R-4.4.1/library"
+.libPaths(c(.libPaths(), system_lib))
+
+#----------------------------------------------

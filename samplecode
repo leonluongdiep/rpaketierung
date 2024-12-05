@@ -1,4 +1,0 @@
-SELECT 
-    REPLACE_REGEXPR('[^a-zA-Z0-9]' IN your_column WITH '') AS cleaned_column
-FROM 
-    your_table;
